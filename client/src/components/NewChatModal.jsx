@@ -1,21 +1,24 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { apiUrl } from '../utils/api';
 
 export default function NewChatModal({ onClose, onCreated }) {
   const [search, setSearch] = useState('');
-  const [users, setUsers] = useState([]);
+  const [allUsers, setAllUsers] = useState([]);
   const [selected, setSelected] = useState([]);
 
-  async function handleSearch(e) {
-    const q = e.target.value;
-    setSearch(q);
-    if (q.length < 1) { setUsers([]); return; }
-    const token = localStorage.getItem('token');
-    const res = await fetch(apiUrl(`/api/users?search=${encodeURIComponent(q)}`), {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (res.ok) setUsers(await res.json());
-  }
+  useEffect(() => {
+    (async () => {
+      const token = localStorage.getItem('token');
+      const res = await fetch(apiUrl('/api/users'), {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) setAllUsers(await res.json());
+    })();
+  }, []);
+
+  const users = allUsers.filter(u =>
+    !search || u.username.toLowerCase().includes(search.toLowerCase())
+  );
 
   function toggleUser(id) {
     setSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
@@ -37,7 +40,7 @@ export default function NewChatModal({ onClose, onCreated }) {
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={e => e.stopPropagation()}>
         <h2>New Conversation</h2>
-        <input placeholder="Search users..." value={search} onChange={handleSearch} autoFocus />
+        <input placeholder="Search users..." value={search} onChange={e => setSearch(e.target.value)} autoFocus />
         <div className="user-list">
           {users.map(u => (
             <div key={u.id} className="user-item" onClick={() => toggleUser(u.id)}>
@@ -45,7 +48,8 @@ export default function NewChatModal({ onClose, onCreated }) {
               <label>{u.username}</label>
             </div>
           ))}
-          {search && users.length === 0 && <div style={{ color: '#555' }}>No users found</div>}
+          {allUsers.length === 0 && <div style={{ color: '#555' }}>No other users registered</div>}
+          {search && allUsers.length > 0 && users.length === 0 && <div style={{ color: '#555' }}>No users found</div>}
         </div>
         <div className="modal-actions">
           <button className="btn-cancel" onClick={onClose}>Cancel</button>
