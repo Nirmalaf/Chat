@@ -4,11 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "postinstall": "npm run install:all && npm run build",
     "start": "node server/index.js",
-    "build": "npm run build --prefix client",
-    "dev": "node server/index.js & npm run dev --prefix client",
-    "install:all": "npm install --prefix server && npm install --prefix client"
+    "build": "npm install --prefix client && npm run build --prefix client",
+    "dev": "node server/index.js & npm run dev --prefix client"
   },
   "dependencies": {
     "@netlify/blobs": "^10.7.11",
