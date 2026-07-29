@@ -1,9 +1,36 @@
-const { getStore } = require('@netlify/blobs');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { v4: uuid } = require('uuid');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'chat-app-secret';
+const memoryDB = { users: null, conversations: null };
+
+let blobStore = null;
+try {
+  const { getStore } = require('@netlify/blobs');
+  blobStore = getStore('chat-data');
+} catch (e) {
+  console.log('Blob store unavailable, using memory:', e.message);
+}
+
+async function db(key, defaultValue = null) {
+  if (blobStore) {
+    try {
+      const item = await blobStore.get(key, { type: 'json' });
+      if (item) return item.body;
+    } catch (e) { console.log('Blob read error:', e.message); }
+  }
+  if (memoryDB[key] !== null && memoryDB[key] !== undefined) return memoryDB[key];
+  return defaultValue;
+}
+
+async function dbSet(key, value) {
+  memoryDB[key] = value;
+  if (blobStore) {
+    try { await blobStore.setJSON(key, value); }
+    catch (e) { console.log('Blob write error:', e.message); }
+  }
+}
 
 function getAuthUser(event) {
   const header = event.headers.authorization || event.headers.Authorization;
@@ -52,30 +79,15 @@ exports.handler = async (event) => {
     if (/^\/conversations\/[\w-]+\/messages$/.test(path) && (method === 'GET' || method === 'POST')) return handleMessages(event);
     if (/^\/conversations\/[\w-]+\/poll$/.test(path) && method === 'GET') return handlePoll(event);
 
-    return respond({ error: 'Not found' }, 404);
+    return respond({ error: 'Not found', path }, 404);
   } catch (err) {
-    return respond({ error: err.message || 'Server error' }, 500);
+    return respond({ error: 'Error: ' + (err.message || err) }, 500);
   }
 };
 
-async function db(key, defaultValue = null) {
-  try {
-    const store = getStore('chat-data');
-    const item = await store.get(key, { type: 'json' });
-    return item ? item.body : defaultValue;
-  } catch (e) {
-    console.error('DB error:', e.message);
-    throw e;
-  }
-}
-
-async function dbSet(key, value) {
-  const store = getStore('chat-data');
-  await store.setJSON(key, value);
-}
-
 async function handleSignup(event) {
-  const { username, email, password } = JSON.parse(event.body);
+  const body = JSON.parse(event.body);
+  const { username, email, password } = body;
   if (!username || !email || !password) return respond({ error: 'Fill all fields' }, 400);
 
   const users = (await db('users')) || [];
@@ -179,7 +191,6 @@ async function handleMessages(event) {
     if (!content) return respond({ error: 'Content required' }, 400);
     const msg = { id: uuid(), senderId: auth.id, content, createdAt: new Date().toISOString() };
     conv.messages.push(msg);
-    all[all.indexOf(conv)] = conv;
     await dbSet('conversations', all);
     return respond(msg, 201);
   }

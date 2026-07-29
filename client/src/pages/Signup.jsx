@@ -28,8 +28,9 @@ export default function Signup() {
       });
       clearTimeout(timer);
 
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Signup failed');
+      let data;
+      try { data = await res.json(); } catch { data = {}; }
+      if (!res.ok) throw new Error(data.error || 'HTTP ' + res.status);
 
       login(data.token, data.user);
       navigate('/chat');
