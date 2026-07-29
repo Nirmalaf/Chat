@@ -77,7 +77,6 @@ exports.handler = async (event) => {
     if (path === '/conversations' && method === 'GET') return handleGetConversations(event);
     if (path === '/conversations' && method === 'POST') return handleCreateConversation(event);
     if (/^\/conversations\/[\w-]+\/messages$/.test(path) && (method === 'GET' || method === 'POST')) return handleMessages(event);
-    if (/^\/conversations\/[\w-]+\/poll$/.test(path) && method === 'GET') return handlePoll(event);
 
     return respond({ error: 'Not found', path }, 404);
   } catch (err) {
@@ -183,7 +182,7 @@ async function handleMessages(event) {
     const since = event.queryStringParameters?.since;
     let msgs = conv.messages || [];
     if (since) msgs = msgs.filter(m => m.createdAt > since);
-    return respond(msgs);
+    return respond({ messages: msgs, serverTime: new Date().toISOString() });
   }
 
   if (event.httpMethod === 'POST') {
@@ -196,17 +195,3 @@ async function handleMessages(event) {
   }
 }
 
-async function handlePoll(event) {
-  const auth = getAuthUser(event);
-  if (!auth) return respond({ error: 'Unauthorized' }, 401);
-
-  const convId = event.path.split('/').filter(Boolean).slice(-2, -1)[0];
-  const all = (await db('conversations')) || [];
-  const conv = all.find(c => c.id === convId);
-  if (!conv) return respond({ error: 'Not found' }, 404);
-  if (!conv.participants?.includes(auth.id)) return respond({ error: 'Forbidden' }, 403);
-
-  const since = event.queryStringParameters?.since || new Date(0).toISOString();
-  const newMsgs = (conv.messages || []).filter(m => m.createdAt > since);
-  return respond({ messages: newMsgs, serverTime: new Date().toISOString() });
-}

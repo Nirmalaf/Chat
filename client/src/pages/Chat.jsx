@@ -20,6 +20,12 @@ export default function Chat() {
 
   useEffect(() => { fetchConversations(); }, [fetchConversations]);
 
+  useEffect(() => {
+    if (activeConv && !conversations.some(c => c.id === activeConv.id)) {
+      setConversations(prev => [...prev, activeConv]);
+    }
+  }, [conversations, activeConv]);
+
   return (
     <div className="chat-layout">
       <Sidebar

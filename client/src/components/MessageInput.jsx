@@ -15,9 +15,8 @@ export default function MessageInput({ conversation, onConversationsChange }) {
   const fetchMessages = useCallback(async () => {
     if (!conversation) return;
     const token = localStorage.getItem('token');
-    const url = lastPollRef.current
-      ? apiUrl(`/api/conversations/${conversation.id}/poll?since=${lastPollRef.current}`)
-      : apiUrl(`/api/conversations/${conversation.id}/messages`);
+    const since = lastPollRef.current ? `?since=${lastPollRef.current}` : '';
+    const url = apiUrl(`/api/conversations/${conversation.id}/messages${since}`);
     const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
     if (!res.ok) return;
     const data = await res.json();
@@ -26,11 +25,10 @@ export default function MessageInput({ conversation, onConversationsChange }) {
         setMessages(prev => [...prev, ...data.messages]);
         onConversationsChange();
       }
-      if (data.serverTime) lastPollRef.current = data.serverTime;
     } else {
-      setMessages(data);
-      lastPollRef.current = new Date().toISOString();
+      setMessages(data.messages || []);
     }
+    if (data.serverTime) lastPollRef.current = data.serverTime;
   }, [conversation, onConversationsChange]);
 
   useEffect(() => {
