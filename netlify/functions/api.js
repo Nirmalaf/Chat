@@ -17,7 +17,7 @@ async function db(key, defaultValue = null) {
   if (blobStore) {
     try {
       const item = await blobStore.get(key, { type: 'json' });
-      if (item) return item.body;
+      if (item !== null && item !== undefined) return item;
     } catch (e) { console.log('Blob read error:', e.message); }
   }
   if (memoryDB[key] !== null && memoryDB[key] !== undefined) return memoryDB[key];
