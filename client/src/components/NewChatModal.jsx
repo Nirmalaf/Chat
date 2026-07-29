@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { useAuth } from '../context/AuthContext';
 import { apiUrl } from '../utils/api';
 
 export default function NewChatModal({ onClose, onCreated }) {

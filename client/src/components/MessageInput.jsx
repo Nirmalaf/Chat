@@ -51,15 +51,13 @@ export default function MessageInput({ conversation, onConversationsChange }) {
     e.preventDefault();
     if (!input.trim() || !conversation) return;
     const token = localStorage.getItem('token');
-    const res = await fetch(apiUrl(`/api/conversations/${conversation.id}/messages`), {
+    await fetch(apiUrl(`/api/conversations/${conversation.id}/messages`), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify({ content: input.trim() }),
     });
-    if (res.ok) {
-      setInput('');
-      await fetchMessages();
-    }
+    setInput('');
+    await fetchMessages();
   }
 
   return (

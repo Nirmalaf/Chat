@@ -27,7 +27,6 @@ export default function Chat() {
         activeConvId={activeConv?.id}
         onSelect={setActiveConv}
         onNewChat={() => setShowNewChat(true)}
-        onConversationsChange={fetchConversations}
       />
       <ChatWindow
         conversation={activeConv}
