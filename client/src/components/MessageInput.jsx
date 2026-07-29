@@ -1,70 +1,65 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { useSocket } from '../context/SocketContext';
+import { apiUrl } from '../utils/api';
+
+const POLL_INTERVAL = 2000;
 
 export default function MessageInput({ conversation, onConversationsChange }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
-  const [typing, setTyping] = useState('');
   const { user } = useAuth();
-  const { socket } = useSocket();
   const messagesEndRef = useRef(null);
-  const typingTimeout = useRef(null);
+  const lastPollRef = useRef(null);
+  const pollRef = useRef(null);
 
-  useEffect(() => {
+  const fetchMessages = useCallback(async () => {
     if (!conversation) return;
     const token = localStorage.getItem('token');
-    fetch(`/api/conversations/${conversation.id}/messages`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then(res => res.ok ? res.json() : [])
-      .then(setMessages);
-    socket?.emit('join_conversation', conversation.id);
-    setTyping('');
-  }, [conversation?.id]);
-
-  useEffect(() => {
-    if (!socket) return;
-    const handler = ({ conversationId, message }) => {
-      if (conversationId === conversation?.id) {
-        setMessages(prev => [...prev, message]);
+    const url = lastPollRef.current
+      ? apiUrl(`/api/conversations/${conversation.id}/poll?since=${lastPollRef.current}`)
+      : apiUrl(`/api/conversations/${conversation.id}/messages`);
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) return;
+    const data = await res.json();
+    if (lastPollRef.current) {
+      if (data.messages?.length > 0) {
+        setMessages(prev => [...prev, ...data.messages]);
         onConversationsChange();
       }
-    };
-    const typingHandler = ({ conversationId, username }) => {
-      if (conversationId === conversation?.id) setTyping(`${username} is typing...`);
-    };
-    const stopTypingHandler = ({ conversationId }) => {
-      if (conversationId === conversation?.id) setTyping('');
-    };
-    socket.on('new_message', handler);
-    socket.on('typing', typingHandler);
-    socket.on('stop_typing', stopTypingHandler);
+      if (data.serverTime) lastPollRef.current = data.serverTime;
+    } else {
+      setMessages(data);
+      lastPollRef.current = new Date().toISOString();
+    }
+  }, [conversation, onConversationsChange]);
+
+  useEffect(() => {
+    setMessages([]);
+    lastPollRef.current = null;
+    if (conversation) {
+      fetchMessages();
+      pollRef.current = setInterval(fetchMessages, POLL_INTERVAL);
+    }
     return () => {
-      socket.off('new_message', handler);
-      socket.off('typing', typingHandler);
-      socket.off('stop_typing', stopTypingHandler);
+      if (pollRef.current) clearInterval(pollRef.current);
     };
-  }, [socket, conversation?.id]);
+  }, [conversation?.id, fetchMessages]);
 
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
-  function handleSend(e) {
+  async function handleSend(e) {
     e.preventDefault();
-    if (!input.trim() || !socket || !conversation) return;
-    socket.emit('send_message', { conversationId: conversation.id, content: input.trim() });
-    setInput('');
-    socket.emit('stop_typing', { conversationId: conversation.id });
-  }
-
-  function handleInput(e) {
-    setInput(e.target.value);
-    if (!socket || !conversation) return;
-    socket.emit('typing', { conversationId: conversation.id });
-    clearTimeout(typingTimeout.current);
-    typingTimeout.current = setTimeout(() => {
-      socket.emit('stop_typing', { conversationId: conversation.id });
-    }, 1500);
+    if (!input.trim() || !conversation) return;
+    const token = localStorage.getItem('token');
+    const res = await fetch(apiUrl(`/api/conversations/${conversation.id}/messages`), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ content: input.trim() }),
+    });
+    if (res.ok) {
+      setInput('');
+      await fetchMessages();
+    }
   }
 
   return (
@@ -74,17 +69,16 @@ export default function MessageInput({ conversation, onConversationsChange }) {
           <div key={msg.id} className={`message ${msg.senderId === user?.id ? 'mine' : 'other'}`}>
             <div>{msg.content}</div>
             <div className="message-meta">
-              {msg.sender?.username || ''} {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             </div>
           </div>
         ))}
         <div ref={messagesEndRef} />
       </div>
-      {typing && <div className="typing-indicator">{typing}</div>}
       <form className="message-input-area" onSubmit={handleSend}>
         <input
           value={input}
-          onChange={handleInput}
+          onChange={e => setInput(e.target.value)}
           placeholder="Type a message..."
         />
         <button type="submit" disabled={!input.trim()}>Send</button>

@@ -1,18 +1,18 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { SocketProvider } from '../context/SocketContext';
+import { apiUrl } from '../utils/api';
 import Sidebar from '../components/Sidebar';
 import ChatWindow from '../components/ChatWindow';
 import NewChatModal from '../components/NewChatModal';
 
-function ChatInner() {
+export default function Chat() {
   const [conversations, setConversations] = useState([]);
   const [activeConv, setActiveConv] = useState(null);
   const [showNewChat, setShowNewChat] = useState(false);
 
   const fetchConversations = useCallback(async () => {
     const token = localStorage.getItem('token');
-    const res = await fetch('/api/conversations', {
+    const res = await fetch(apiUrl('/api/conversations'), {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (res.ok) setConversations(await res.json());
@@ -44,13 +44,5 @@ function ChatInner() {
         />
       )}
     </div>
-  );
-}
-
-export default function Chat() {
-  return (
-    <SocketProvider>
-      <ChatInner />
-    </SocketProvider>
   );
 }

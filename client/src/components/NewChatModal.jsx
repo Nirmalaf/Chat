@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { apiUrl } from '../utils/api';
 
 export default function NewChatModal({ onClose, onCreated }) {
   const [search, setSearch] = useState('');
@@ -11,7 +12,7 @@ export default function NewChatModal({ onClose, onCreated }) {
     setSearch(q);
     if (q.length < 1) { setUsers([]); return; }
     const token = localStorage.getItem('token');
-    const res = await fetch(`/api/users?search=${encodeURIComponent(q)}`, {
+    const res = await fetch(apiUrl(`/api/users?search=${encodeURIComponent(q)}`), {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (res.ok) setUsers(await res.json());
@@ -25,7 +26,7 @@ export default function NewChatModal({ onClose, onCreated }) {
     if (selected.length === 0) return;
     const token = localStorage.getItem('token');
     const type = selected.length === 1 ? 'direct' : 'group';
-    const res = await fetch('/api/conversations', {
+    const res = await fetch(apiUrl('/api/conversations'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify({ type, participantIds: selected }),
