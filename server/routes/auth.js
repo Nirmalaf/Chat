@@ -10,6 +10,8 @@ router.post('/signup', async (req, res) => {
   const { username, email, password } = req.body;
   if (!username || !email || !password)
     return res.status(400).json({ error: 'All fields required' });
+  if (password.length < 4)
+    return res.status(400).json({ error: 'Password must be at least 4 characters' });
 
   if (findOne('users', { username }))
     return res.status(409).json({ error: 'Username taken' });

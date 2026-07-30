@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { apiUrl } from '../utils/api';
 import Sidebar from '../components/Sidebar';
@@ -7,31 +7,35 @@ import NewChatModal from '../components/NewChatModal';
 
 export default function Chat() {
   const [conversations, setConversations] = useState([]);
-  const [activeConv, setActiveConv] = useState(null);
+  const [activeId, setActiveId] = useState(null);
   const [showNewChat, setShowNewChat] = useState(false);
+
+  const activeConv = activeId ? conversations.find(c => c.id === activeId) || null : null;
 
   const fetchConversations = useCallback(async () => {
     const token = localStorage.getItem('token');
-    const res = await fetch(apiUrl('/api/conversations'), {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (res.ok) setConversations(await res.json());
+    try {
+      const res = await fetch(apiUrl('/api/conversations'), {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) setConversations(await res.json());
+    } catch (err) {
+      console.error('Failed to fetch conversations:', err);
+    }
   }, []);
 
   useEffect(() => { fetchConversations(); }, [fetchConversations]);
 
-  useEffect(() => {
-    if (activeConv && !conversations.some(c => c.id === activeConv.id)) {
-      setConversations(prev => [...prev, activeConv]);
-    }
-  }, [conversations, activeConv]);
+  function handleSelect(conv) {
+    setActiveId(conv.id);
+  }
 
   return (
     <div className="chat-layout">
       <Sidebar
         conversations={conversations}
-        activeConvId={activeConv?.id}
-        onSelect={setActiveConv}
+        activeConvId={activeId}
+        onSelect={handleSelect}
         onNewChat={() => setShowNewChat(true)}
       />
       <ChatWindow
@@ -43,7 +47,7 @@ export default function Chat() {
           onClose={() => setShowNewChat(false)}
           onCreated={(conv) => {
             setShowNewChat(false);
-            setActiveConv(conv);
+            setActiveId(conv.id);
             fetchConversations();
           }}
         />

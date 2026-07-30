@@ -67,7 +67,10 @@ router.get('/:id/messages', authMiddleware, (req, res) => {
   if (!conv) return res.status(404).json({ error: 'Not found' });
   if (!conv.participants.includes(req.user.id))
     return res.status(403).json({ error: 'Forbidden' });
-  res.json(conv.messages || []);
+  const { since } = req.query;
+  let messages = conv.messages || [];
+  if (since) messages = messages.filter(m => m.createdAt > since);
+  res.json({ messages, serverTime: new Date().toISOString() });
 });
 
 router.post('/:id/messages', authMiddleware, (req, res) => {
@@ -75,16 +78,21 @@ router.post('/:id/messages', authMiddleware, (req, res) => {
   if (!conv) return res.status(404).json({ error: 'Not found' });
   if (!conv.participants.includes(req.user.id))
     return res.status(403).json({ error: 'Forbidden' });
+  if (!req.body.content || !req.body.content.trim())
+    return res.status(400).json({ error: 'Content required' });
 
   const msg = {
     id: uuid(),
     senderId: req.user.id,
-    content: req.body.content,
+    content: req.body.content.trim(),
     createdAt: new Date().toISOString(),
   };
   pushToArray('conversations', req.params.id, 'messages', msg);
-  const updated = findById('conversations', req.params.id);
-  global.io?.to(conv.id).emit('new_message', { conversationId: conv.id, message: msg });
+  const sender = findById('users', req.user.id);
+  global.io?.to(conv.id).emit('new_message', {
+    conversationId: conv.id,
+    message: { ...msg, sender: sender ? { id: sender.id, username: sender.username } : undefined },
+  });
   res.status(201).json(msg);
 });
 

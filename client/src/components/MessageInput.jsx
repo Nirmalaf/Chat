@@ -11,29 +11,35 @@ export default function MessageInput({ conversation, onConversationsChange }) {
   const messagesEndRef = useRef(null);
   const lastPollRef = useRef(null);
   const pollRef = useRef(null);
+  const convIdRef = useRef(null);
 
   const fetchMessages = useCallback(async () => {
     if (!conversation) return;
     const token = localStorage.getItem('token');
     const since = lastPollRef.current ? `?since=${lastPollRef.current}` : '';
     const url = apiUrl(`/api/conversations/${conversation.id}/messages${since}`);
-    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-    if (!res.ok) return;
-    const data = await res.json();
-    if (lastPollRef.current) {
-      if (data.messages?.length > 0) {
-        setMessages(prev => [...prev, ...data.messages]);
-        onConversationsChange();
+    try {
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (lastPollRef.current) {
+        if (data.messages?.length > 0) {
+          setMessages(prev => [...prev, ...data.messages]);
+          onConversationsChange();
+        }
+      } else {
+        setMessages(data.messages || []);
       }
-    } else {
-      setMessages(data.messages || []);
+      if (data.serverTime) lastPollRef.current = data.serverTime;
+    } catch (err) {
+      console.error('Failed to fetch messages:', err);
     }
-    if (data.serverTime) lastPollRef.current = data.serverTime;
-  }, [conversation, onConversationsChange]);
+  }, [conversation?.id, onConversationsChange]);
 
   useEffect(() => {
     setMessages([]);
     lastPollRef.current = null;
+    convIdRef.current = conversation?.id;
     if (conversation) {
       fetchMessages();
       pollRef.current = setInterval(fetchMessages, POLL_INTERVAL);
@@ -49,13 +55,22 @@ export default function MessageInput({ conversation, onConversationsChange }) {
     e.preventDefault();
     if (!input.trim() || !conversation) return;
     const token = localStorage.getItem('token');
-    await fetch(apiUrl(`/api/conversations/${conversation.id}/messages`), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ content: input.trim() }),
-    });
-    setInput('');
-    await fetchMessages();
+    try {
+      const res = await fetch(apiUrl(`/api/conversations/${conversation.id}/messages`), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ content: input.trim() }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        console.error('Failed to send message:', err.error || res.status);
+        return;
+      }
+      setInput('');
+      await fetchMessages();
+    } catch (err) {
+      console.error('Failed to send message:', err);
+    }
   }
 
   return (
@@ -63,6 +78,9 @@ export default function MessageInput({ conversation, onConversationsChange }) {
       <div className="messages">
         {messages.map(msg => (
           <div key={msg.id} className={`message ${msg.senderId === user?.id ? 'mine' : 'other'}`}>
+            {msg.senderId !== user?.id && msg.sender && (
+              <div className="message-sender">{msg.sender.username}</div>
+            )}
             <div>{msg.content}</div>
             <div className="message-meta">
               {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
