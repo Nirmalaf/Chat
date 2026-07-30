@@ -3,17 +3,27 @@ const jwt = require('jsonwebtoken');
 const { v4: uuid } = require('uuid');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'chat-app-secret';
-const memoryDB = { users: [], conversations: [] };
 
-let blobStore = null;
-try {
-  const { getStore } = require('@netlify/blobs');
-  blobStore = getStore('chat-data');
-} catch (e) {
-  console.log('Blob store unavailable, using memory:', e.message);
+const memoryDB = { users: [], conversations: [] };
+let blobStorePromise = null;
+
+function initBlobStore() {
+  if (blobStorePromise) return blobStorePromise;
+  try {
+    const { getStore } = require('@netlify/blobs');
+    blobStorePromise = Promise.resolve().then(() => {
+      try { return getStore('chat-data'); }
+      catch (e) { console.log('Blob store init error:', e.message); return null; }
+    });
+  } catch (e) {
+    console.log('@netlify/blobs not available:', e.message);
+    blobStorePromise = Promise.resolve(null);
+  }
+  return blobStorePromise;
 }
 
 async function db(key) {
+  const blobStore = await initBlobStore();
   if (blobStore) {
     try {
       const item = await blobStore.get(key, { type: 'json' });
@@ -25,6 +35,7 @@ async function db(key) {
 
 async function dbSet(key, value) {
   memoryDB[key] = value;
+  const blobStore = await initBlobStore();
   if (blobStore) {
     try { await blobStore.setJSON(key, value); }
     catch (e) { console.log('Blob write error:', e.message); }
