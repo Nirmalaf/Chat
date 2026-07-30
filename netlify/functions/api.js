@@ -83,6 +83,8 @@ exports.handler = async (event) => {
 
     if (path === '/auth/signup' && method === 'POST') return handleSignup(event);
     if (path === '/auth/login' && method === 'POST') return handleLogin(event);
+    if (path === '/auth/forgot-password' && method === 'POST') return handleForgotPassword(event);
+    if (path === '/auth/reset-password' && method === 'POST') return handleResetPassword(event);
     if (path === '/users' && method === 'GET') return handleUsers(event);
     if (path === '/conversations' && method === 'GET') return handleGetConversations(event);
     if (path === '/conversations' && method === 'POST') return handleCreateConversation(event);
@@ -121,6 +123,42 @@ async function handleLogin(event) {
 
   const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: '7d' });
   return respond({ token, user: { id: user.id, username: user.username, email: user.email } });
+}
+
+async function handleForgotPassword(event) {
+  const { email } = JSON.parse(event.body);
+  if (!email) return respond({ error: 'Email is required' }, 400);
+
+  const users = await db('users');
+  const user = users.find(u => u.email === email);
+  if (!user) return respond({ error: 'No account found with that email' }, 404);
+
+  const resetToken = Math.random().toString(36).substring(2, 8).toUpperCase();
+  user.resetToken = resetToken;
+  user.resetTokenExpiry = new Date(Date.now() + 3600000).toISOString();
+  await dbSet('users', users);
+
+  return respond({ message: 'Reset token sent to your email', resetToken, email: user.email });
+}
+
+async function handleResetPassword(event) {
+  const { email, resetToken, password } = JSON.parse(event.body);
+  if (!email || !resetToken || !password) return respond({ error: 'All fields required' }, 400);
+  if (password.length < 4) return respond({ error: 'Password must be at least 4 characters' }, 400);
+
+  const users = await db('users');
+  const user = users.find(u => u.email === email);
+  if (!user) return respond({ error: 'No account found with that email' }, 404);
+  if (user.resetToken !== resetToken) return respond({ error: 'Invalid reset token' }, 400);
+  if (!user.resetTokenExpiry || new Date(user.resetTokenExpiry) < new Date()) return respond({ error: 'Reset token has expired' }, 400);
+
+  const hashed = await bcrypt.hash(password, 10);
+  user.password = hashed;
+  user.resetToken = null;
+  user.resetTokenExpiry = null;
+  await dbSet('users', users);
+
+  return respond({ message: 'Password reset successfully' });
 }
 
 async function handleUsers(event) {

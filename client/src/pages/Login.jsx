@@ -73,6 +73,9 @@ export default function Login() {
             {submitting ? 'Signing in...' : 'Sign In'}
           </button>
         </form>
+        <div style={{ textAlign: 'center', marginTop: '0.8rem' }}>
+          <Link to="/forgot-password" style={{ color: '#888', fontSize: '0.85rem' }}>Forgot Password?</Link>
+        </div>
         <div className="auth-link">
           Don't have an account? <Link to="/signup">Sign Up</Link>
         </div>
