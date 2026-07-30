@@ -3,7 +3,7 @@ const jwt = require('jsonwebtoken');
 const { v4: uuid } = require('uuid');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'chat-app-secret';
-const memoryDB = { users: null, conversations: null };
+const memoryDB = { users: [], conversations: [] };
 
 let blobStore = null;
 try {
@@ -13,15 +13,14 @@ try {
   console.log('Blob store unavailable, using memory:', e.message);
 }
 
-async function db(key, defaultValue = null) {
+async function db(key) {
   if (blobStore) {
     try {
       const item = await blobStore.get(key, { type: 'json' });
       if (item !== null && item !== undefined) return item;
     } catch (e) { console.log('Blob read error:', e.message); }
   }
-  if (memoryDB[key] !== null && memoryDB[key] !== undefined) return memoryDB[key];
-  return defaultValue;
+  return memoryDB[key] || [];
 }
 
 async function dbSet(key, value) {
@@ -62,7 +61,7 @@ exports.handler = async (event) => {
         headers: {
           'Access-Control-Allow-Origin': '*',
           'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+          'Access-Control-Allow-Headers': 'Content-Type,Authorization,Accept',
         },
         body: '',
       };
@@ -88,8 +87,9 @@ async function handleSignup(event) {
   const body = JSON.parse(event.body);
   const { username, email, password } = body;
   if (!username || !email || !password) return respond({ error: 'Fill all fields' }, 400);
+  if (password.length < 4) return respond({ error: 'Password must be at least 4 characters' }, 400);
 
-  const users = (await db('users')) || [];
+  const users = await db('users');
   if (users.some(u => u.username === username)) return respond({ error: 'Username taken' }, 409);
   if (users.some(u => u.email === email)) return respond({ error: 'Email already registered' }, 409);
 
@@ -104,7 +104,7 @@ async function handleSignup(event) {
 
 async function handleLogin(event) {
   const { username, password } = JSON.parse(event.body);
-  const users = (await db('users')) || [];
+  const users = await db('users');
   const user = users.find(u => u.username === username);
   if (!user || !(await bcrypt.compare(password, user.password))) return respond({ error: 'Invalid username or password' }, 401);
 
@@ -116,19 +116,21 @@ async function handleUsers(event) {
   const auth = getAuthUser(event);
   if (!auth) return respond({ error: 'Unauthorized' }, 401);
 
-  const users = (await db('users')) || [];
+  const users = await db('users');
   const search = (event.queryStringParameters?.search || '').toLowerCase();
   let result = users.filter(u => u.id !== auth.id);
-  if (search) result = result.filter(u => u.username.toLowerCase().includes(search));
-  return respond(result.map(u => ({ id: u.id, username: u.username })));
+  if (search) {
+    result = result.filter(u => u.username.toLowerCase().includes(search) || u.email.toLowerCase().includes(search));
+  }
+  return respond(result.map(u => ({ id: u.id, username: u.username, email: u.email, avatar: u.avatar || '' })));
 }
 
 async function handleGetConversations(event) {
   const auth = getAuthUser(event);
   if (!auth) return respond({ error: 'Unauthorized' }, 401);
 
-  const users = (await db('users')) || [];
-  const all = (await db('conversations')) || [];
+  const users = await db('users');
+  const all = await db('conversations');
   const convs = all.filter(c => c.participants?.includes(auth.id));
 
   const enriched = convs.map(c => {
@@ -138,8 +140,8 @@ async function handleGetConversations(event) {
     const others = otherIds.map(id => { const u = users.find(us => us.id === id); return u ? { id: u.id, username: u.username } : null; }).filter(Boolean);
     return {
       id: c.id, type: c.type, name: c.name || others.map(u => u.username).join(', '),
-      otherUsers: others,
-      lastMessage: last ? { content: last.content, createdAt: last.createdAt } : null,
+      participants: c.participants, otherUsers: others,
+      lastMessage: last ? { content: last.content, senderId: last.senderId, createdAt: last.createdAt } : null,
       createdAt: c.createdAt,
     };
   });
@@ -151,18 +153,18 @@ async function handleCreateConversation(event) {
   const auth = getAuthUser(event);
   if (!auth) return respond({ error: 'Unauthorized' }, 401);
 
-  const { type, participantIds } = JSON.parse(event.body);
+  const { type, participantIds, name } = JSON.parse(event.body);
   if (!type || !participantIds?.length) return respond({ error: 'Invalid data' }, 400);
 
   const participants = [...new Set([auth.id, ...participantIds])];
-  const all = (await db('conversations')) || [];
+  const all = await db('conversations');
 
   if (type === 'direct' && participants.length === 2) {
     const existing = all.find(c => c.type === 'direct' && c.participants?.length === 2 && participants.every(p => c.participants.includes(p)));
     if (existing) return respond(existing);
   }
 
-  const conv = { id: uuid(), type, name: '', participants, messages: [], createdAt: new Date().toISOString() };
+  const conv = { id: uuid(), type, name: name || '', participants, messages: [], createdAt: new Date().toISOString() };
   all.push(conv);
   await dbSet('conversations', all);
   return respond(conv, 201);
@@ -173,7 +175,7 @@ async function handleMessages(event) {
   if (!auth) return respond({ error: 'Unauthorized' }, 401);
 
   const convId = event.path.split('/').filter(Boolean).slice(-2, -1)[0];
-  const all = (await db('conversations')) || [];
+  const all = await db('conversations');
   const conv = all.find(c => c.id === convId);
   if (!conv) return respond({ error: 'Not found' }, 404);
   if (!conv.participants?.includes(auth.id)) return respond({ error: 'Forbidden' }, 403);
@@ -187,11 +189,13 @@ async function handleMessages(event) {
 
   if (event.httpMethod === 'POST') {
     const { content } = JSON.parse(event.body);
-    if (!content) return respond({ error: 'Content required' }, 400);
-    const msg = { id: uuid(), senderId: auth.id, content, createdAt: new Date().toISOString() };
+    if (!content || !content.trim()) return respond({ error: 'Content required' }, 400);
+    const users = await db('users');
+    const sender = users.find(u => u.id === auth.id);
+    const msg = { id: uuid(), senderId: auth.id, content: content.trim(), createdAt: new Date().toISOString() };
     conv.messages.push(msg);
     await dbSet('conversations', all);
-    return respond(msg, 201);
+    return respond({ ...msg, sender: sender ? { id: sender.id, username: sender.username } : undefined }, 201);
   }
 }
 
